@@ -93,11 +93,16 @@
         async function initAudio() {
             if (audioCtx) return;
             try {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-                micStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, sampleRate: 16000 } });
+                // Creamos el contexto usando la frecuencia nativa real del dispositivo (sin forzar 16000)
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                micStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1 } });
                 
                 inputNode = audioCtx.createMediaStreamSource(micStream);
+                // Subimos el búfer a 4096 para mayor estabilidad en la red
                 processor = audioCtx.createScriptProcessor(4096, 1, 1);
+
+                const gainNode = audioCtx.createGain();
+                gainNode.gain.value = 0; // Evita el eco local
 
                 processor.onaudioprocess = (e) => {
                     if (!isTransmitting || !ws || ws.readyState !== WebSocket.OPEN) return;
@@ -112,7 +117,8 @@
                 };
 
                 inputNode.connect(processor);
-                processor.connect(audioCtx.destination); // Necesario para mantener activo el nodo en algunos navegadores móviles
+                processor.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
             } catch (err) {
                 alert("Permiso de micrófono denegado: " + err);
             }
@@ -130,7 +136,8 @@
                     float32Data[i] = int16Data[i] / (int16Data[i] < 0 ? 0x8000 : 0x7FFF);
                 }
 
-                const audioBuffer = audioCtx.createBuffer(1, float32Data.length, 16000);
+                // Usamos audioCtx.sampleRate en lugar de un número fijo para que coincida exactamente con la velocidad de reproducción
+                const audioBuffer = audioCtx.createBuffer(1, float32Data.length, audioCtx.sampleRate);
                 audioBuffer.getChannelData(0).set(float32Data);
 
                 const source = audioCtx.createBufferSource();
