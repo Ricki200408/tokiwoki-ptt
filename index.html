@@ -31,6 +31,7 @@
             box-shadow: 0 4px 15px rgba(0,0,0,0.5); 
             transition: 0.2s; 
             user-select: none;
+            -webkit-user-select: none;
         }
         #ptt-btn.active { 
             background: #2ed573; 
@@ -46,7 +47,7 @@
 
     <script>
         // ⚠️ REEMPLAZA ESTA URL con tu enlace actual wss:// proporcionado por ngrok
-        const WS_URL = "wss://cavity-expletive-parking.ngrok-free.dev"; 
+        const WS_URL = "wss://TU-SUBDOMINIO.ngrok-free.app"; 
         
         let socket;
         let mediaRecorder;
@@ -76,12 +77,10 @@
             // RECIBIR AUDIO EN TIEMPO REAL DEL OTRO DISPOSITIVO
             socket.onmessage = async (event) => {
                 try {
-                    // Convierte el mensaje binario recibido en un Blob reproducible
                     const audioBlob = new Blob([event.data], { type: 'audio/webm' });
                     const audioUrl = URL.createObjectURL(audioBlob);
                     const audio = new Audio(audioUrl);
                     
-                    // Reproduce el audio automáticamente
                     audio.play().catch(err => {
                         console.log("Bloqueo de reproducción automática del navegador:", err);
                     });
@@ -91,37 +90,37 @@
             };
         }
 
-        // INICIAR TRANSMISIÓN (Micrófono)
-       async function startRecording(e) {
-    e.preventDefault();
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        
-        // Buscar un formato compatible con el celular
-        let options = { mimeType: 'audio/webm' };
-        if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-            options = { mimeType: 'audio/mp4' }; // Alternativa para iOS u otros
-            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                options = {}; // Dejar que el navegador elija el predeterminado
+        // INICIAR TRANSMISIÓN (Micrófono con compatibilidad móvil)
+        async function startRecording(e) {
+            e.preventDefault();
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                // Detección automática de formato compatible con móviles y PC
+                let options = { mimeType: 'audio/webm' };
+                if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                    options = { mimeType: 'audio/mp4' }; // Alternativa para iOS o algunos navegadores móviles
+                    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                        options = {}; // Deja que el navegador elija su formato predeterminado seguro
+                    }
+                }
+
+                mediaRecorder = new MediaRecorder(stream, options);
+
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0 && socket.readyState === WebSocket.OPEN) {
+                        socket.send(event.data); // Envía los fragmentos de voz por el WebSocket
+                    }
+                };
+
+                mediaRecorder.start(250); // Envía paquetes cada 250ms
+                pttBtn.classList.add("active");
+                pttBtn.innerText = "Transmitiendo...";
+            } catch (err) {
+                console.error("No se pudo acceder al micrófono:", err);
+                alert("Permiso de micrófono denegado o no disponible: " + err.message);
             }
         }
-
-        mediaRecorder = new MediaRecorder(stream, options);
-
-        mediaRecorder.ondataavailable = (event) => {
-            if (event.data.size > 0 && socket.readyState === WebSocket.OPEN) {
-                socket.send(event.data); // Envía los datos al servidor
-            }
-        };
-
-        mediaRecorder.start(250);
-        pttBtn.classList.add("active");
-        pttBtn.innerText = "Transmitiendo...";
-    } catch (err) {
-        console.error("Error al acceder al micrófono del celular:", err);
-        alert("No se pudo usar el micrófono: " + err.message);
-    }
-}
 
         // DETENER TRANSMISIÓN
         function stopRecording(e) {
