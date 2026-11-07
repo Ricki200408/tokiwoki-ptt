@@ -86,6 +86,7 @@
         }
 
         async function initAudio() {
+            if (audioCtx) return; // Evitar reinicializar si ya está activo
             try {
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
                 micStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, sampleRate: 16000 } });
@@ -106,7 +107,7 @@
                 };
 
                 inputNode.connect(processor);
-                processor.connect(audioCtx.destination);
+                // NOTA: No conectamos processor a audioCtx.destination para evitar escuchar nuestra propia voz en el altavoz
             } catch (err) {
                 alert("Permiso de micrófono denegado o error: " + err);
             }
@@ -115,6 +116,9 @@
         async function playAudioChunk(arrayBuffer) {
             if (!audioCtx) return;
             try {
+                if (audioCtx.state === 'suspended') {
+                    await audioCtx.resume();
+                }
                 const int16Data = new Int16Array(arrayBuffer);
                 const float32Data = new Float32Array(int16Data.length);
                 for (let i = 0; i < int16Data.length; i++) {
@@ -133,11 +137,17 @@
             }
         }
 
-        function startTalk(e) {
+        async function startTalk(e) {
             e.preventDefault();
-            if (audioCtx && audioCtx.state === 'suspended') {
-                audioCtx.resume();
+            
+            // Garantizar la inicialización con el primer toque
+            if (!audioCtx) {
+                await initAudio();
             }
+            if (audioCtx && audioCtx.state === 'suspended') {
+                await audioCtx.resume();
+            }
+
             isTransmitting = true;
             pttBtn.classList.add('active');
             pttBtn.innerText = "TRANSMITIENDO...";
@@ -154,17 +164,11 @@
         pttBtn.addEventListener('touchstart', startTalk);
         pttBtn.addEventListener('touchend', stopTalk);
 
-        // Eventos de mouse (por si se prueba en PC)
+        // Eventos de mouse (para pruebas en PC)
         pttBtn.addEventListener('mousedown', startTalk);
         pttBtn.addEventListener('mouseup', stopTalk);
 
-        // Activar audio del navegador al primer toque en la pantalla
-        window.addEventListener('click', () => {
-            if (!audioCtx) {
-                initAudio();
-            }
-        }, { once: true });
-
+        // Conectar al servidor al cargar
         connect();
     </script>
 </body>
