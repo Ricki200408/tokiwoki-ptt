@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Radio PTT</title>
+    <title>Radio PTT - Celular</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -47,10 +47,11 @@
 </head>
 <body>
 
-    <div id="status">Estado: Desconectado</div>
+    <div id="status">Conectando al servidor...</div>
     <button id="ptt-btn">MANTÉN PARA<br>HABLAR</button>
 
     <script>
+        // Tu enlace actual de ngrok convertido a wss://
         const WS_URL = "wss://cavity-expletive-parking.ngrok-free.dev";
         let ws;
         let audioCtx;
@@ -63,7 +64,6 @@
         const pttBtn = document.getElementById('ptt-btn');
 
         function connect() {
-            statusEl.innerText = "Estado: Conectando...";
             ws = new WebSocket(WS_URL);
             ws.binaryType = 'arraybuffer';
 
@@ -73,14 +73,9 @@
             };
 
             ws.onclose = () => {
-                statusEl.innerText = "Estado: Desconectado (Reconectando...) 🔴";
+                statusEl.innerText = "Estado: Desconectado (Reconectando...)";
                 statusEl.style.color = "#ff5252";
                 setTimeout(connect, 3000);
-            };
-
-            ws.onerror = (error) => {
-                console.error("Error en WebSocket:", error);
-                statusEl.innerText = "Estado: Error de conexión ❌";
             };
 
             ws.onmessage = async (event) => {
@@ -91,18 +86,12 @@
         }
 
         async function initAudio() {
-            if (audioCtx) return;
             try {
-                // Creamos el contexto usando la frecuencia nativa real del dispositivo (sin forzar 16000)
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                micStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1 } });
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                micStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, sampleRate: 16000 } });
                 
                 inputNode = audioCtx.createMediaStreamSource(micStream);
-                // Subimos el búfer a 4096 para mayor estabilidad en la red
-                processor = audioCtx.createScriptProcessor(4096, 1, 1);
-
-                const gainNode = audioCtx.createGain();
-                gainNode.gain.value = 0; // Evita el eco local
+                processor = audioCtx.createScriptProcessor(1024, 1, 1);
 
                 processor.onaudioprocess = (e) => {
                     if (!isTransmitting || !ws || ws.readyState !== WebSocket.OPEN) return;
@@ -117,27 +106,22 @@
                 };
 
                 inputNode.connect(processor);
-                processor.connect(gainNode);
-                gainNode.connect(audioCtx.destination);
+                processor.connect(audioCtx.destination);
             } catch (err) {
-                alert("Permiso de micrófono denegado: " + err);
+                alert("Permiso de micrófono denegado o error: " + err);
             }
         }
 
         async function playAudioChunk(arrayBuffer) {
             if (!audioCtx) return;
             try {
-                if (audioCtx.state === 'suspended') {
-                    await audioCtx.resume();
-                }
                 const int16Data = new Int16Array(arrayBuffer);
                 const float32Data = new Float32Array(int16Data.length);
                 for (let i = 0; i < int16Data.length; i++) {
                     float32Data[i] = int16Data[i] / (int16Data[i] < 0 ? 0x8000 : 0x7FFF);
                 }
 
-                // Usamos audioCtx.sampleRate en lugar de un número fijo para que coincida exactamente con la velocidad de reproducción
-                const audioBuffer = audioCtx.createBuffer(1, float32Data.length, audioCtx.sampleRate);
+                const audioBuffer = audioCtx.createBuffer(1, float32Data.length, 16000);
                 audioBuffer.getChannelData(0).set(float32Data);
 
                 const source = audioCtx.createBufferSource();
@@ -149,13 +133,10 @@
             }
         }
 
-        async function startTalk(e) {
+        function startTalk(e) {
             e.preventDefault();
-            if (!audioCtx) {
-                await initAudio();
-            }
             if (audioCtx && audioCtx.state === 'suspended') {
-                await audioCtx.resume();
+                audioCtx.resume();
             }
             isTransmitting = true;
             pttBtn.classList.add('active');
@@ -166,13 +147,23 @@
             e.preventDefault();
             isTransmitting = false;
             pttBtn.classList.remove('active');
-            pttBtn.innerText = "MANTÉN PARA\HABLAR";
+            pttBtn.innerText = "MANTÉN PARA\nHABLAR";
         }
 
+        // Eventos táctiles para celulares
         pttBtn.addEventListener('touchstart', startTalk);
         pttBtn.addEventListener('touchend', stopTalk);
+
+        // Eventos de mouse (por si se prueba en PC)
         pttBtn.addEventListener('mousedown', startTalk);
         pttBtn.addEventListener('mouseup', stopTalk);
+
+        // Activar audio del navegador al primer toque en la pantalla
+        window.addEventListener('click', () => {
+            if (!audioCtx) {
+                initAudio();
+            }
+        }, { once: true });
 
         connect();
     </script>
