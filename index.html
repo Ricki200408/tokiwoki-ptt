@@ -97,7 +97,7 @@
                 micStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, sampleRate: 16000 } });
                 
                 inputNode = audioCtx.createMediaStreamSource(micStream);
-                processor = audioCtx.createScriptProcessor(1024, 1, 1);
+                processor = audioCtx.createScriptProcessor(4096, 1, 1);
 
                 processor.onaudioprocess = (e) => {
                     if (!isTransmitting || !ws || ws.readyState !== WebSocket.OPEN) return;
