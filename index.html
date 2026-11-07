@@ -2,170 +2,138 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Radio PTT - Celular</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Walkie-Talkie PTT</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #121212;
-            color: white;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            margin: 0;
-            overflow: hidden;
+        body { 
+            font-family: Arial, sans-serif; 
+            text-align: center; 
+            margin-top: 80px; 
+            background: #121212; 
+            color: #fff; 
         }
-        #status {
-            margin-bottom: 30px;
-            font-size: 18px;
-            font-weight: bold;
-            color: #ff5252;
+        #status { 
+            font-weight: bold; 
+            margin-bottom: 30px; 
+            font-size: 18px; 
         }
-        #ptt-btn {
-            width: 260px;
-            height: 260px;
-            border-radius: 50%;
-            background-color: #007acc;
-            color: white;
-            font-size: 24px;
+        #ptt-btn { 
+            width: 180px; 
+            height: 180px; 
+            border-radius: 50%; 
+            background: #ff4757; 
+            color: white; 
+            font-size: 16px; 
             font-weight: bold;
-            border: 6px solid #005999;
-            cursor: pointer;
-            outline: none;
-            box-shadow: 0px 10px 20px rgba(0,0,0,0.6);
+            border: none; 
+            cursor: pointer; 
+            outline: none; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5); 
+            transition: 0.2s; 
             user-select: none;
-            -webkit-user-select: none;
         }
-        #ptt-btn.active {
-            background-color: #2ea44f;
-            border-color: #1e6b33;
-            transform: scale(0.96);
+        #ptt-btn.active { 
+            background: #2ed573; 
+            transform: scale(0.95); 
         }
     </style>
 </head>
 <body>
 
-    <div id="status">Conectando al servidor...</div>
-    <button id="ptt-btn">MANTÉN PARA<br>HABLAR</button>
+    <h1>Walkie-Talkie PTT</h1>
+    <div id="status">Estado: Conectando... ⏳</div>
+    <button id="ptt-btn">Mantener para Hablar</button>
 
     <script>
-        // Tu enlace actual de ngrok convertido a wss://
-        const WS_URL = "wss://cavity-expletive-parking.ngrok-free.dev";
-        let ws;
-        let audioCtx;
-        let micStream;
-        let processor;
-        let inputNode;
-        let isTransmitting = false;
+        // ⚠️ REEMPLAZA ESTA URL con tu enlace actual wss:// proporcionado por ngrok
+        const WS_URL = "wss://cavity-expletive-parking.ngrok-free.dev"; 
+        
+        let socket;
+        let mediaRecorder;
 
-        const statusEl = document.getElementById('status');
-        const pttBtn = document.getElementById('ptt-btn');
+        const statusDiv = document.getElementById("status");
+        const pttBtn = document.getElementById("ptt-btn");
 
-        function connect() {
-            ws = new WebSocket(WS_URL);
-            ws.binaryType = 'arraybuffer';
+        function connectWebSocket() {
+            socket = new WebSocket(WS_URL);
 
-            ws.onopen = () => {
-                statusEl.innerText = "Estado: Conectado 🟢";
-                statusEl.style.color = "#4caf50";
+            socket.onopen = () => {
+                statusDiv.innerHTML = "Estado: Conectado 🟢";
+                statusDiv.style.color = "#2ed573";
             };
 
-            ws.onclose = () => {
-                statusEl.innerText = "Estado: Desconectado (Reconectando...)";
-                statusEl.style.color = "#ff5252";
-                setTimeout(connect, 3000);
+            socket.onclose = () => {
+                statusDiv.innerHTML = "Estado: Desconectado (Reconectando...) 🔴";
+                statusDiv.style.color = "#ff4757";
+                setTimeout(connectWebSocket, 3000); // Intenta reconectar cada 3 segundos
             };
 
-            ws.onmessage = async (event) => {
-                if (event.data instanceof ArrayBuffer) {
-                    playAudioChunk(event.data);
+            socket.onerror = (error) => {
+                console.error("Error en WebSocket:", error);
+                statusDiv.innerHTML = "Estado: Error de conexión ❌";
+            };
+
+            // RECIBIR AUDIO EN TIEMPO REAL DEL OTRO DISPOSITIVO
+            socket.onmessage = async (event) => {
+                try {
+                    // Convierte el mensaje binario recibido en un Blob reproducible
+                    const audioBlob = new Blob([event.data], { type: 'audio/webm' });
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    const audio = new Audio(audioUrl);
+                    
+                    // Reproduce el audio automáticamente
+                    audio.play().catch(err => {
+                        console.log("Bloqueo de reproducción automática del navegador:", err);
+                    });
+                } catch (e) {
+                    console.error("Error al procesar el audio entrante:", e);
                 }
             };
         }
 
-        async function initAudio() {
+        // INICIAR TRANSMISIÓN (Micrófono)
+        async function startRecording(e) {
+            e.preventDefault();
             try {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-                micStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, sampleRate: 16000 } });
-                
-                inputNode = audioCtx.createMediaStreamSource(micStream);
-                processor = audioCtx.createScriptProcessor(1024, 1, 1);
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
 
-                processor.onaudioprocess = (e) => {
-                    if (!isTransmitting || !ws || ws.readyState !== WebSocket.OPEN) return;
-                    
-                    const inputData = e.inputBuffer.getChannelData(0);
-                    const int16Data = new Int16Array(inputData.length);
-                    for (let i = 0; i < inputData.length; i++) {
-                        let s = Math.max(-1, Math.min(1, inputData[i]));
-                        int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0 && socket.readyState === WebSocket.OPEN) {
+                        socket.send(event.data); // Envía los fragmentos de voz por el WebSocket
                     }
-                    ws.send(int16Data.buffer);
                 };
 
-                inputNode.connect(processor);
-                processor.connect(audioCtx.destination);
+                mediaRecorder.start(250); // Envía paquetes de audio cada 250 milisegundos
+                pttBtn.classList.add("active");
+                pttBtn.innerText = "Transmitiendo...";
             } catch (err) {
-                alert("Permiso de micrófono denegado o error: " + err);
+                console.error("No se pudo acceder al micrófono:", err);
+                alert("Permiso de micrófono denegado o no disponible.");
             }
         }
 
-        async function playAudioChunk(arrayBuffer) {
-            if (!audioCtx) return;
-            try {
-                const int16Data = new Int16Array(arrayBuffer);
-                const float32Data = new Float32Array(int16Data.length);
-                for (let i = 0; i < int16Data.length; i++) {
-                    float32Data[i] = int16Data[i] / (int16Data[i] < 0 ? 0x8000 : 0x7FFF);
-                }
-
-                const audioBuffer = audioCtx.createBuffer(1, float32Data.length, 16000);
-                audioBuffer.getChannelData(0).set(float32Data);
-
-                const source = audioCtx.createBufferSource();
-                source.buffer = audioBuffer;
-                source.connect(audioCtx.destination);
-                source.start();
-            } catch (e) {
-                console.error("Error reproduciendo audio:", e);
-            }
-        }
-
-        function startTalk(e) {
+        // DETENER TRANSMISIÓN
+        function stopRecording(e) {
             e.preventDefault();
-            if (audioCtx && audioCtx.state === 'suspended') {
-                audioCtx.resume();
+            if (mediaRecorder && mediaRecorder.state !== "inactive") {
+                mediaRecorder.stop();
+                mediaRecorder.stream.getTracks().forEach(track => track.stop()); // Libera el micrófono
             }
-            isTransmitting = true;
-            pttBtn.classList.add('active');
-            pttBtn.innerText = "TRANSMITIENDO...";
+            pttBtn.classList.remove("active");
+            pttBtn.innerText = "Mantener para Hablar";
         }
 
-        function stopTalk(e) {
-            e.preventDefault();
-            isTransmitting = false;
-            pttBtn.classList.remove('active');
-            pttBtn.innerText = "MANTÉN PARA\nHABLAR";
-        }
+        // Eventos para Computadora (Mouse)
+        pttBtn.addEventListener("mousedown", startRecording);
+        pttBtn.addEventListener("mouseup", stopRecording);
 
-        // Eventos táctiles para celulares
-        pttBtn.addEventListener('touchstart', startTalk);
-        pttBtn.addEventListener('touchend', stopTalk);
+        // Eventos para Celulares (Táctil)
+        pttBtn.addEventListener("touchstart", startRecording);
+        pttBtn.addEventListener("touchend", stopRecording);
 
-        // Eventos de mouse (por si se prueba en PC)
-        pttBtn.addEventListener('mousedown', startTalk);
-        pttBtn.addEventListener('mouseup', stopTalk);
-
-        // Activar audio del navegador al primer toque en la pantalla
-        window.addEventListener('click', () => {
-            if (!audioCtx) {
-                initAudio();
-            }
-        }, { once: true });
-
-        connect();
+        // Inicializar la conexión al cargar la página
+        connectWebSocket();
     </script>
 </body>
 </html>
