@@ -92,66 +92,51 @@
         }
 
         // INICIAR GRABACIÓN AL PRESIONAR EL BOTÓN
-        async function startRecording(e) {
-            e.preventDefault();
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                audioChunks = []; // Reiniciar fragmentos
+async function startRecording(e) {
+    e.preventDefault();
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioChunks = []; // Reiniciar fragmentos
 
-                let options = { mimeType: 'audio/webm' };
-                if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                    options = { mimeType: 'audio/mp4' };
-                    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                        options = {};
-                    }
-                }
-
-                mediaRecorder = new MediaRecorder(stream, options);
-
-                mediaRecorder.ondataavailable = (event) => {
-                    if (event.data.size > 0) {
-                        audioChunks.push(event.data); // Acumular partes de la voz
-                    }
-                };
-
-                // AL SOLTAR EL BOTÓN SE ENVÍA EL AUDIO COMPLETO
-                mediaRecorder.onstop = () => {
-                    const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
-                    if (socket.readyState === WebSocket.OPEN) {
-                        socket.send(audioBlob); // Transmite el archivo de voz completo
-                    }
-                    // Detener los canales del micrófono
-                    stream.getTracks().forEach(track => track.stop());
-                };
-
-                mediaRecorder.start(); // Graba de corrido
-                pttBtn.classList.add("active");
-                pttBtn.innerText = "Transmitiendo...";
-            } catch (err) {
-                console.error("No se pudo acceder al micrófono:", err);
-                alert("Permiso de micrófono denegado: " + err.message);
+        let options = { mimeType: 'audio/webm' };
+        if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+            options = { mimeType: 'audio/mp4' };
+            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                options = {};
             }
         }
 
-        // DETENER GRABACIÓN AL SOLTAR EL BOTÓN
-        function stopRecording(e) {
-            e.preventDefault();
-            if (mediaRecorder && mediaRecorder.state !== "inactive") {
-                mediaRecorder.stop(); // Esto dispara el evento onstop y envía el audio
+        mediaRecorder = new MediaRecorder(stream, options);
+
+        mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+                audioChunks.push(event.data);
             }
-            pttBtn.classList.remove("active");
-            pttBtn.innerText = "Mantener para Hablar";
-        }
+        };
 
-        // Eventos para Computadora (Mouse)
-        pttBtn.addEventListener("mousedown", startRecording);
-        pttBtn.addEventListener("mouseup", stopRecording);
+        // AL SOLTAR EL BOTÓN SE ENVÍA EL AUDIO COMPLETO CON SU CABECERA
+        mediaRecorder.onstop = () => {
+            const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+            if (socket.readyState === WebSocket.OPEN) {
+                socket.send(audioBlob); 
+            }
+            stream.getTracks().forEach(track => track.stop());
+        };
 
-        // Eventos para Celulares (Táctil)
-        pttBtn.addEventListener("touchstart", startRecording);
-        pttBtn.addEventListener("touchend", stopRecording);
+        mediaRecorder.start();
+        pttBtn.classList.add("active");
+        pttBtn.innerText = "Transmitiendo...";
+    } catch (err) {
+        console.error("No se pudo acceder al micrófono:", err);
+        alert("Permiso de micrófono denegado: " + err.message);
+    }
+}
 
-        connectWebSocket();
-    </script>
-</body>
-</html>
+function stopRecording(e) {
+    e.preventDefault();
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop(); // Esto detiene la grabación y dispara el envío automático
+    }
+    pttBtn.classList.remove("active");
+    pttBtn.innerText = "Mantener para Hablar";
+}
