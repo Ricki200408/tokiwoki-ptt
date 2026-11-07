@@ -47,10 +47,11 @@
 
     <script>
         // ⚠️ REEMPLAZA ESTA URL con tu enlace actual wss:// proporcionado por ngrok
-        const WS_URL = "wss://cavity-expletive-parking.ngrok-free.dev"; 
+        const WS_URL = "wss://TU-SUBDOMINIO.ngrok-free.app"; 
         
         let socket;
         let mediaRecorder;
+        let audioChunks = [];
 
         const statusDiv = document.getElementById("status");
         const pttBtn = document.getElementById("ptt-btn");
@@ -66,7 +67,7 @@
             socket.onclose = () => {
                 statusDiv.innerHTML = "Estado: Desconectado (Reconectando...) 🔴";
                 statusDiv.style.color = "#ff4757";
-                setTimeout(connectWebSocket, 3000); // Intenta reconectar cada 3 segundos
+                setTimeout(connectWebSocket, 3000);
             };
 
             socket.onerror = (error) => {
@@ -74,10 +75,10 @@
                 statusDiv.innerHTML = "Estado: Error de conexión ❌";
             };
 
-            // RECIBIR AUDIO EN TIEMPO REAL DEL OTRO DISPOSITIVO
+            // RECIBIR Y REPRODUCIR EL AUDIO COMPLETO DEL OTRO DISPOSITIVO
             socket.onmessage = async (event) => {
                 try {
-                    const audioBlob = new Blob([event.data], { type: 'audio/webm' });
+                    const audioBlob = event.data instanceof Blob ? event.data : new Blob([event.data], { type: 'audio/webm' });
                     const audioUrl = URL.createObjectURL(audioBlob);
                     const audio = new Audio(audioUrl);
                     
@@ -90,44 +91,53 @@
             };
         }
 
-        // INICIAR TRANSMISIÓN (Micrófono con compatibilidad móvil)
+        // INICIAR GRABACIÓN AL PRESIONAR EL BOTÓN
         async function startRecording(e) {
             e.preventDefault();
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                
-                // Detección automática de formato compatible con móviles y PC
+                audioChunks = []; // Reiniciar fragmentos
+
                 let options = { mimeType: 'audio/webm' };
                 if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                    options = { mimeType: 'audio/mp4' }; // Alternativa para iOS o algunos navegadores móviles
+                    options = { mimeType: 'audio/mp4' };
                     if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                        options = {}; // Deja que el navegador elija su formato predeterminado seguro
+                        options = {};
                     }
                 }
 
                 mediaRecorder = new MediaRecorder(stream, options);
 
                 mediaRecorder.ondataavailable = (event) => {
-                    if (event.data.size > 0 && socket.readyState === WebSocket.OPEN) {
-                        socket.send(event.data); // Envía los fragmentos de voz por el WebSocket
+                    if (event.data.size > 0) {
+                        audioChunks.push(event.data); // Acumular partes de la voz
                     }
                 };
 
-                mediaRecorder.start(250); // Envía paquetes cada 250ms
+                // AL SOLTAR EL BOTÓN SE ENVÍA EL AUDIO COMPLETO
+                mediaRecorder.onstop = () => {
+                    const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+                    if (socket.readyState === WebSocket.OPEN) {
+                        socket.send(audioBlob); // Transmite el archivo de voz completo
+                    }
+                    // Detener los canales del micrófono
+                    stream.getTracks().forEach(track => track.stop());
+                };
+
+                mediaRecorder.start(); // Graba de corrido
                 pttBtn.classList.add("active");
                 pttBtn.innerText = "Transmitiendo...";
             } catch (err) {
                 console.error("No se pudo acceder al micrófono:", err);
-                alert("Permiso de micrófono denegado o no disponible: " + err.message);
+                alert("Permiso de micrófono denegado: " + err.message);
             }
         }
 
-        // DETENER TRANSMISIÓN
+        // DETENER GRABACIÓN AL SOLTAR EL BOTÓN
         function stopRecording(e) {
             e.preventDefault();
             if (mediaRecorder && mediaRecorder.state !== "inactive") {
-                mediaRecorder.stop();
-                mediaRecorder.stream.getTracks().forEach(track => track.stop()); // Libera el micrófono
+                mediaRecorder.stop(); // Esto dispara el evento onstop y envía el audio
             }
             pttBtn.classList.remove("active");
             pttBtn.innerText = "Mantener para Hablar";
@@ -141,7 +151,6 @@
         pttBtn.addEventListener("touchstart", startRecording);
         pttBtn.addEventListener("touchend", stopRecording);
 
-        // Inicializar la conexión al cargar la página
         connectWebSocket();
     </script>
 </body>
