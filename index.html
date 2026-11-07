@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Walkie-Talkie PTT</title>
+    <title>Walkie-Talkie PTT Limpio</title>
     <style>
         body { 
             font-family: Arial, sans-serif; 
             text-align: center; 
-            margin-top: 80px; 
+            margin-top: 100px; 
             background: #121212; 
             color: #fff; 
         }
@@ -29,7 +29,6 @@
             cursor: pointer; 
             outline: none; 
             box-shadow: 0 4px 15px rgba(0,0,0,0.5); 
-            transition: 0.2s; 
             user-select: none;
             -webkit-user-select: none;
         }
@@ -46,8 +45,8 @@
     <button id="ptt-btn">Mantener para Hablar</button>
 
     <script>
-        // ⚠️ Asegúrate de que esta sea tu URL actual de ngrok
-        const WS_URL = "wss://cavity-expletive-parking.ngrok-free.dev"; 
+        // ⚠️ REEMPLAZA ESTA URL con tu enlace actual wss:// proporcionado por ngrok
+        const WS_URL = "wss://TU-SUBDOMINIO.ngrok-free.dev"; 
         
         let socket;
         let mediaRecorder;
@@ -57,7 +56,6 @@
         const pttBtn = document.getElementById("ptt-btn");
 
         function connectWebSocket() {
-            // CORRECCIÓN: Se remueve el parámetro conflictivo para que Python acepte la conexión
             socket = new WebSocket(WS_URL);
 
             socket.onopen = () => {
@@ -76,38 +74,27 @@
                 statusDiv.innerHTML = "Estado: Error de conexión ❌";
             };
 
-            // RECIBIR Y REPRODUCIR EL AUDIO COMPLETO DEL OTRO DISPOSITIVO
+            // Recibir y reproducir el audio del otro dispositivo
             socket.onmessage = async (event) => {
                 try {
                     const audioBlob = event.data instanceof Blob ? event.data : new Blob([event.data], { type: 'audio/webm' });
                     const audioUrl = URL.createObjectURL(audioBlob);
                     const audio = new Audio(audioUrl);
-                    
-                    audio.play().catch(err => {
-                        console.log("Bloqueo de reproducción automática del navegador:", err);
-                    });
+                    audio.play().catch(err => console.log("Bloqueo de autoplay:", err));
                 } catch (e) {
-                    console.error("Error al procesar el audio entrante:", e);
+                    console.error("Error al reproducir audio:", e);
                 }
             };
         }
 
-        // INICIAR GRABACIÓN AL PRESIONAR EL BOTÓN
+        // Iniciar grabación al presionar
         async function startRecording(e) {
             e.preventDefault();
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                audioChunks = []; 
+                audioChunks = [];
 
-                let options = { mimeType: 'audio/webm' };
-                if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                    options = { mimeType: 'audio/mp4' };
-                    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                        options = {};
-                    }
-                }
-
-                mediaRecorder = new MediaRecorder(stream, options);
+                mediaRecorder = new MediaRecorder(stream);
 
                 mediaRecorder.ondataavailable = (event) => {
                     if (event.data.size > 0) {
@@ -115,11 +102,11 @@
                     }
                 };
 
-                // AL SOLTAR EL BOTÓN SE ENVÍA EL AUDIO COMPLETO
+                // Al soltar, empaquetar y enviar por el WebSocket
                 mediaRecorder.onstop = () => {
-                    const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
                     if (socket.readyState === WebSocket.OPEN) {
-                        socket.send(audioBlob); 
+                        socket.send(audioBlob);
                     }
                     stream.getTracks().forEach(track => track.stop());
                 };
@@ -128,26 +115,26 @@
                 pttBtn.classList.add("active");
                 pttBtn.innerText = "Transmitiendo...";
             } catch (err) {
-                console.error("No se pudo acceder al micrófono:", err);
-                alert("Permiso de micrófono denegado: " + err.message);
+                console.error("Error de micrófono:", err);
+                alert("No se pudo acceder al micrófono.");
             }
         }
 
-        // DETENER GRABACIÓN AL SOLTAR EL BOTÓN
+        // Detener grabación al soltar
         function stopRecording(e) {
             e.preventDefault();
             if (mediaRecorder && mediaRecorder.state !== "inactive") {
-                mediaRecorder.stop(); 
+                mediaRecorder.stop();
             }
             pttBtn.classList.remove("active");
             pttBtn.innerText = "Mantener para Hablar";
         }
 
-        // Eventos para Computadora (Mouse)
+        // Eventos de Mouse (PC)
         pttBtn.addEventListener("mousedown", startRecording);
         pttBtn.addEventListener("mouseup", stopRecording);
 
-        // Eventos para Celulares (Táctil)
+        // Eventos Táctiles (Celular)
         pttBtn.addEventListener("touchstart", startRecording);
         pttBtn.addEventListener("touchend", stopRecording);
 
