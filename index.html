@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Radio PTT - Celular</title>
+    <title>Radio PTT</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -47,11 +47,10 @@
 </head>
 <body>
 
-    <div id="status">Conectando al servidor...</div>
+    <div id="status">Estado: Desconectado</div>
     <button id="ptt-btn">MANTÉN PARA<br>HABLAR</button>
 
     <script>
-        // Tu enlace actual de ngrok convertido a wss://
         const WS_URL = "wss://cavity-expletive-parking.ngrok-free.dev";
         let ws;
         let audioCtx;
@@ -64,6 +63,7 @@
         const pttBtn = document.getElementById('ptt-btn');
 
         function connect() {
+            statusEl.innerText = "Estado: Conectando...";
             ws = new WebSocket(WS_URL);
             ws.binaryType = 'arraybuffer';
 
@@ -73,9 +73,14 @@
             };
 
             ws.onclose = () => {
-                statusEl.innerText = "Estado: Desconectado (Reconectando...)";
+                statusEl.innerText = "Estado: Desconectado (Reconectando...) 🔴";
                 statusEl.style.color = "#ff5252";
                 setTimeout(connect, 3000);
+            };
+
+            ws.onerror = (error) => {
+                console.error("Error en WebSocket:", error);
+                statusEl.innerText = "Estado: Error de conexión ❌";
             };
 
             ws.onmessage = async (event) => {
@@ -86,7 +91,7 @@
         }
 
         async function initAudio() {
-            if (audioCtx) return; // Evitar reinicializar si ya está activo
+            if (audioCtx) return;
             try {
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
                 micStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, sampleRate: 16000 } });
@@ -107,49 +112,44 @@
                 };
 
                 inputNode.connect(processor);
-                // NOTA: No conectamos processor a audioCtx.destination para evitar escuchar nuestra propia voz en el altavoz
+                processor.connect(audioCtx.destination); // Necesario para mantener activo el nodo en algunos navegadores móviles
             } catch (err) {
-                alert("Permiso de micrófono denegado o error: " + err);
+                alert("Permiso de micrófono denegado: " + err);
             }
         }
 
         async function playAudioChunk(arrayBuffer) {
-    if (!audioCtx) return;
-    try {
-        if (audioCtx.state === 'suspended') {
-            await audioCtx.resume();
-        }
-        const int16Data = new Int16Array(arrayBuffer);
-        const float32Data = new Float32Array(int16Data.length);
-        for (let i = 0; i < int16Data.length; i++) {
-            float32Data[i] = int16Data[i] / (int16Data[i] < 0 ? 0x8000 : 0x7FFF);
-        }
+            if (!audioCtx) return;
+            try {
+                if (audioCtx.state === 'suspended') {
+                    await audioCtx.resume();
+                }
+                const int16Data = new Int16Array(arrayBuffer);
+                const float32Data = new Float32Array(int16Data.length);
+                for (let i = 0; i < int16Data.length; i++) {
+                    float32Data[i] = int16Data[i] / (int16Data[i] < 0 ? 0x8000 : 0x7FFF);
+                }
 
-        const audioBuffer = audioCtx.createBuffer(1, float32Data.length, 16000);
-        audioBuffer.getChannelData(0).set(float32Data);
+                const audioBuffer = audioCtx.createBuffer(1, float32Data.length, 16000);
+                audioBuffer.getChannelData(0).set(float32Data);
 
-        const source = audioCtx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(audioCtx.destination);
-        
-        // Programar reproducción inmediata
-        source.start(audioCtx.currentTime);
-    } catch (e) {
-        console.error("Error reproduciendo audio:", e);
-    }
-}
+                const source = audioCtx.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(audioCtx.destination);
+                source.start();
+            } catch (e) {
+                console.error("Error reproduciendo audio:", e);
+            }
+        }
 
         async function startTalk(e) {
             e.preventDefault();
-            
-            // Garantizar la inicialización con el primer toque
             if (!audioCtx) {
                 await initAudio();
             }
             if (audioCtx && audioCtx.state === 'suspended') {
                 await audioCtx.resume();
             }
-
             isTransmitting = true;
             pttBtn.classList.add('active');
             pttBtn.innerText = "TRANSMITIENDO...";
@@ -159,18 +159,14 @@
             e.preventDefault();
             isTransmitting = false;
             pttBtn.classList.remove('active');
-            pttBtn.innerText = "MANTÉN PARA\nHABLAR";
+            pttBtn.innerText = "MANTÉN PARA\HABLAR";
         }
 
-        // Eventos táctiles para celulares
         pttBtn.addEventListener('touchstart', startTalk);
         pttBtn.addEventListener('touchend', stopTalk);
-
-        // Eventos de mouse (para pruebas en PC)
         pttBtn.addEventListener('mousedown', startTalk);
         pttBtn.addEventListener('mouseup', stopTalk);
 
-        // Conectar al servidor al cargar
         connect();
     </script>
 </body>
