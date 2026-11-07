@@ -46,7 +46,7 @@
     <button id="ptt-btn">Mantener para Hablar</button>
 
     <script>
-        // ⚠️ REEMPLAZA ESTA URL si ngrok genera un nuevo enlace al reiniciar
+        // ⚠️ Asegúrate de que esta sea tu URL actual de ngrok
         const WS_URL = "wss://cavity-expletive-parking.ngrok-free.dev"; 
         
         let socket;
@@ -57,8 +57,8 @@
         const pttBtn = document.getElementById("ptt-btn");
 
         function connectWebSocket() {
-            // Se incluye el subprotocolo para saltarse restricciones de ngrok en WebSockets
-            socket = new WebSocket(WS_URL, "ngrok-skip-browser-warning");
+            // CORRECCIÓN: Se remueve el parámetro conflictivo para que Python acepte la conexión
+            socket = new WebSocket(WS_URL);
 
             socket.onopen = () => {
                 statusDiv.innerHTML = "Estado: Conectado 🟢";
@@ -97,7 +97,7 @@
             e.preventDefault();
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                audioChunks = []; // Reiniciar fragmentos
+                audioChunks = []; 
 
                 let options = { mimeType: 'audio/webm' };
                 if (!MediaRecorder.isTypeSupported(options.mimeType)) {
@@ -115,7 +115,7 @@
                     }
                 };
 
-                // AL SOLTAR EL BOTÓN SE ENVÍA EL AUDIO COMPLETO CON SU CABECERA
+                // AL SOLTAR EL BOTÓN SE ENVÍA EL AUDIO COMPLETO
                 mediaRecorder.onstop = () => {
                     const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
                     if (socket.readyState === WebSocket.OPEN) {
