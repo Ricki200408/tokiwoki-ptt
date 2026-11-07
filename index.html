@@ -46,7 +46,7 @@
     <button id="ptt-btn">Mantener para Hablar</button>
 
     <script>
-        // ⚠️ REEMPLAZA ESTA URL con tu enlace actual wss:// proporcionado por ngrok
+        // ⚠️ REEMPLAZA ESTA URL si ngrok genera un nuevo enlace al reiniciar
         const WS_URL = "wss://cavity-expletive-parking.ngrok-free.dev"; 
         
         let socket;
@@ -57,7 +57,8 @@
         const pttBtn = document.getElementById("ptt-btn");
 
         function connectWebSocket() {
-            socket = new WebSocket(WS_URL);
+            // Se incluye el subprotocolo para saltarse restricciones de ngrok en WebSockets
+            socket = new WebSocket(WS_URL, "ngrok-skip-browser-warning");
 
             socket.onopen = () => {
                 statusDiv.innerHTML = "Estado: Conectado 🟢";
@@ -92,51 +93,65 @@
         }
 
         // INICIAR GRABACIÓN AL PRESIONAR EL BOTÓN
-async function startRecording(e) {
-    e.preventDefault();
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        audioChunks = []; // Reiniciar fragmentos
+        async function startRecording(e) {
+            e.preventDefault();
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioChunks = []; // Reiniciar fragmentos
 
-        let options = { mimeType: 'audio/webm' };
-        if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-            options = { mimeType: 'audio/mp4' };
-            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                options = {};
+                let options = { mimeType: 'audio/webm' };
+                if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                    options = { mimeType: 'audio/mp4' };
+                    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                        options = {};
+                    }
+                }
+
+                mediaRecorder = new MediaRecorder(stream, options);
+
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        audioChunks.push(event.data);
+                    }
+                };
+
+                // AL SOLTAR EL BOTÓN SE ENVÍA EL AUDIO COMPLETO CON SU CABECERA
+                mediaRecorder.onstop = () => {
+                    const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+                    if (socket.readyState === WebSocket.OPEN) {
+                        socket.send(audioBlob); 
+                    }
+                    stream.getTracks().forEach(track => track.stop());
+                };
+
+                mediaRecorder.start();
+                pttBtn.classList.add("active");
+                pttBtn.innerText = "Transmitiendo...";
+            } catch (err) {
+                console.error("No se pudo acceder al micrófono:", err);
+                alert("Permiso de micrófono denegado: " + err.message);
             }
         }
 
-        mediaRecorder = new MediaRecorder(stream, options);
-
-        mediaRecorder.ondataavailable = (event) => {
-            if (event.data.size > 0) {
-                audioChunks.push(event.data);
+        // DETENER GRABACIÓN AL SOLTAR EL BOTÓN
+        function stopRecording(e) {
+            e.preventDefault();
+            if (mediaRecorder && mediaRecorder.state !== "inactive") {
+                mediaRecorder.stop(); 
             }
-        };
+            pttBtn.classList.remove("active");
+            pttBtn.innerText = "Mantener para Hablar";
+        }
 
-        // AL SOLTAR EL BOTÓN SE ENVÍA EL AUDIO COMPLETO CON SU CABECERA
-        mediaRecorder.onstop = () => {
-            const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
-            if (socket.readyState === WebSocket.OPEN) {
-                socket.send(audioBlob); 
-            }
-            stream.getTracks().forEach(track => track.stop());
-        };
+        // Eventos para Computadora (Mouse)
+        pttBtn.addEventListener("mousedown", startRecording);
+        pttBtn.addEventListener("mouseup", stopRecording);
 
-        mediaRecorder.start();
-        pttBtn.classList.add("active");
-        pttBtn.innerText = "Transmitiendo...";
-    } catch (err) {
-        console.error("No se pudo acceder al micrófono:", err);
-        alert("Permiso de micrófono denegado: " + err.message);
-    }
-}
+        // Eventos para Celulares (Táctil)
+        pttBtn.addEventListener("touchstart", startRecording);
+        pttBtn.addEventListener("touchend", stopRecording);
 
-function stopRecording(e) {
-    e.preventDefault();
-    if (mediaRecorder && mediaRecorder.state !== "inactive") {
-        mediaRecorder.stop(); // Esto detiene la grabación y dispara el envío automático
-    }
-    pttBtn.classList.remove("active");
-    pttBtn.innerText = "Mantener para Hablar";
-}
+        connectWebSocket();
+    </script>
+</body>
+</html>
