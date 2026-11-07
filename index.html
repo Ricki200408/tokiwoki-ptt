@@ -114,28 +114,30 @@
         }
 
         async function playAudioChunk(arrayBuffer) {
-            if (!audioCtx) return;
-            try {
-                if (audioCtx.state === 'suspended') {
-                    await audioCtx.resume();
-                }
-                const int16Data = new Int16Array(arrayBuffer);
-                const float32Data = new Float32Array(int16Data.length);
-                for (let i = 0; i < int16Data.length; i++) {
-                    float32Data[i] = int16Data[i] / (int16Data[i] < 0 ? 0x8000 : 0x7FFF);
-                }
-
-                const audioBuffer = audioCtx.createBuffer(1, float32Data.length, 16000);
-                audioBuffer.getChannelData(0).set(float32Data);
-
-                const source = audioCtx.createBufferSource();
-                source.buffer = audioBuffer;
-                source.connect(audioCtx.destination);
-                source.start();
-            } catch (e) {
-                console.error("Error reproduciendo audio:", e);
-            }
+    if (!audioCtx) return;
+    try {
+        if (audioCtx.state === 'suspended') {
+            await audioCtx.resume();
         }
+        const int16Data = new Int16Array(arrayBuffer);
+        const float32Data = new Float32Array(int16Data.length);
+        for (let i = 0; i < int16Data.length; i++) {
+            float32Data[i] = int16Data[i] / (int16Data[i] < 0 ? 0x8000 : 0x7FFF);
+        }
+
+        const audioBuffer = audioCtx.createBuffer(1, float32Data.length, 16000);
+        audioBuffer.getChannelData(0).set(float32Data);
+
+        const source = audioCtx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioCtx.destination);
+        
+        // Programar reproducción inmediata
+        source.start(audioCtx.currentTime);
+    } catch (e) {
+        console.error("Error reproduciendo audio:", e);
+    }
+}
 
         async function startTalk(e) {
             e.preventDefault();
